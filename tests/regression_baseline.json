@@ -1,0 +1,224 @@
+{
+ "warming_0.0": {
+  "crops": {
+   "alfalfa": 1020,
+   "barley": 594,
+   "chickpea": 407,
+   "cotton": 863,
+   "dry_bean": 597,
+   "groundnut": 693,
+   "lentil": 703,
+   "maize": 757,
+   "millet": 502,
+   "mung_bean": 406,
+   "onion": 807,
+   "potato": 722,
+   "rapeseed": 620,
+   "rice": 985,
+   "sorghum": 603,
+   "soybean": 745,
+   "spring_wheat": 701,
+   "sugar_beet": 1028,
+   "sunflower": 591,
+   "tomato": 806,
+   "winter_wheat": 454
+  },
+  "rotations_drip": {
+   "best_id": "wheat_chickpea_sorghum",
+   "order": [
+    "wheat_chickpea_sorghum",
+    "cotton_wheat_mung",
+    "cotton_wheat",
+    "cotton_wheat_alfalfa",
+    "cotton_mono"
+   ],
+   "water_p50": {
+    "cotton_mono": 8002,
+    "cotton_wheat": 4715,
+    "cotton_wheat_alfalfa": 6582,
+    "cotton_wheat_mung": 7050,
+    "wheat_chickpea_sorghum": 3598
+   }
+  },
+  "rotations_furrow": {
+   "best_id": "wheat_chickpea_sorghum",
+   "order": [
+    "wheat_chickpea_sorghum",
+    "cotton_wheat_mung",
+    "cotton_wheat",
+    "cotton_wheat_alfalfa",
+    "cotton_mono"
+   ],
+   "water_p50": {
+    "cotton_mono": 12003,
+    "cotton_wheat": 7072,
+    "cotton_wheat_alfalfa": 9874,
+    "cotton_wheat_mung": 10574,
+    "wheat_chickpea_sorghum": 5397
+   }
+  },
+  "shift": {
+   "aridity": {
+    "baseline": 0.353,
+    "delta": 0.0,
+    "recent": 0.353
+   },
+   "dry_spell_days": {
+    "baseline": 4,
+    "delta": 0,
+    "recent": 4
+   },
+   "et0_mm": {
+    "baseline": 1244,
+    "delta": 0,
+    "recent": 1244
+   },
+   "frost_days": {
+    "baseline": 116,
+    "delta": 0,
+    "recent": 116
+   },
+   "hot_days": {
+    "baseline": 0,
+    "delta": 0,
+    "recent": 0
+   },
+   "precip_mm": {
+    "baseline": 439,
+    "delta": 0,
+    "recent": 439
+   },
+   "rain_days": {
+    "baseline": 73,
+    "delta": 0,
+    "recent": 73
+   },
+   "soil_wetness": {
+    "baseline": 0.5,
+    "delta": 0.0,
+    "recent": 0.5
+   },
+   "t_max": {
+    "baseline": 34.0,
+    "delta": 0.0,
+    "recent": 34.0
+   },
+   "t_mean": {
+    "baseline": 13.99,
+    "delta": 0.0,
+    "recent": 13.99
+   }
+  }
+ },
+ "warming_0.03": {
+  "crops": {
+   "alfalfa": 1042,
+   "barley": 605,
+   "chickpea": 416,
+   "cotton": 880,
+   "dry_bean": 608,
+   "groundnut": 706,
+   "lentil": 716,
+   "maize": 771,
+   "millet": 511,
+   "mung_bean": 414,
+   "onion": 823,
+   "potato": 735,
+   "rapeseed": 636,
+   "rice": 1003,
+   "sorghum": 615,
+   "soybean": 759,
+   "spring_wheat": 714,
+   "sugar_beet": 1049,
+   "sunflower": 602,
+   "tomato": 821,
+   "winter_wheat": 466
+  },
+  "rotations_drip": {
+   "best_id": "wheat_chickpea_sorghum",
+   "order": [
+    "wheat_chickpea_sorghum",
+    "cotton_wheat_mung",
+    "cotton_wheat_alfalfa",
+    "cotton_wheat",
+    "cotton_mono"
+   ],
+   "water_p50": {
+    "cotton_mono": 8038,
+    "cotton_wheat": 5399,
+    "cotton_wheat_alfalfa": 6962,
+    "cotton_wheat_mung": 7745,
+    "wheat_chickpea_sorghum": 4043
+   }
+  },
+  "rotations_furrow": {
+   "best_id": "wheat_chickpea_sorghum",
+   "order": [
+    "wheat_chickpea_sorghum",
+    "cotton_wheat_mung",
+    "cotton_wheat_alfalfa",
+    "cotton_wheat",
+    "cotton_mono"
+   ],
+   "water_p50": {
+    "cotton_mono": 12057,
+    "cotton_wheat": 8098,
+    "cotton_wheat_alfalfa": 10443,
+    "cotton_wheat_mung": 11618,
+    "wheat_chickpea_sorghum": 6065
+   }
+  },
+  "shift": {
+   "aridity": {
+    "baseline": 0.351,
+    "delta": -0.006,
+    "recent": 0.345
+   },
+   "dry_spell_days": {
+    "baseline": 4,
+    "delta": 0,
+    "recent": 4
+   },
+   "et0_mm": {
+    "baseline": 1251,
+    "delta": 21,
+    "recent": 1272
+   },
+   "frost_days": {
+    "baseline": 114,
+    "delta": -7,
+    "recent": 108
+   },
+   "hot_days": {
+    "baseline": 0,
+    "delta": 0,
+    "recent": 0
+   },
+   "precip_mm": {
+    "baseline": 439,
+    "delta": 0,
+    "recent": 439
+   },
+   "rain_days": {
+    "baseline": 73,
+    "delta": 0,
+    "recent": 73
+   },
+   "soil_wetness": {
+    "baseline": 0.5,
+    "delta": 0.0,
+    "recent": 0.5
+   },
+   "t_max": {
+    "baseline": 34.2,
+    "delta": 0.6,
+    "recent": 34.8
+   },
+   "t_mean": {
+    "baseline": 14.2,
+    "delta": 0.6,
+    "recent": 14.8
+   }
+  }
+ }
+}

@@ -1,0 +1,9 @@
+.git
+.venv
+.env
+.claude
+.agents
+tests
+**/__pycache__
+backend/cache/obs/
+backend/cache/prism/
