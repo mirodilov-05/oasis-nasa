@@ -1,27 +1,27 @@
 {
  "warming_0.0": {
   "crops": {
-   "alfalfa": 1020,
-   "barley": 594,
-   "chickpea": 407,
-   "cotton": 863,
-   "dry_bean": 597,
-   "groundnut": 693,
-   "lentil": 703,
-   "maize": 757,
-   "millet": 502,
-   "mung_bean": 406,
-   "onion": 807,
-   "potato": 722,
-   "rapeseed": 620,
-   "rice": 985,
-   "sorghum": 603,
-   "soybean": 745,
-   "spring_wheat": 701,
-   "sugar_beet": 1028,
-   "sunflower": 591,
-   "tomato": 806,
-   "winter_wheat": 454
+   "alfalfa": 1060,
+   "barley": 616,
+   "chickpea": 417,
+   "cotton": 903,
+   "dry_bean": 616,
+   "groundnut": 716,
+   "lentil": 725,
+   "maize": 794,
+   "millet": 529,
+   "mung_bean": 418,
+   "onion": 835,
+   "potato": 749,
+   "rapeseed": 630,
+   "rice": 1018,
+   "sorghum": 637,
+   "soybean": 775,
+   "spring_wheat": 730,
+   "sugar_beet": 1060,
+   "sunflower": 625,
+   "tomato": 832,
+   "winter_wheat": 462
   },
   "rotations_drip": {
    "best_id": "wheat_chickpea_sorghum",
@@ -33,11 +33,11 @@
     "cotton_mono"
    ],
    "water_p50": {
-    "cotton_mono": 8002,
-    "cotton_wheat": 4715,
-    "cotton_wheat_alfalfa": 6582,
-    "cotton_wheat_mung": 7050,
-    "wheat_chickpea_sorghum": 3598
+    "cotton_mono": 8001,
+    "cotton_wheat": 4706,
+    "cotton_wheat_alfalfa": 7235,
+    "cotton_wheat_mung": 7072,
+    "wheat_chickpea_sorghum": 3597
    }
   },
   "rotations_furrow": {
@@ -50,11 +50,11 @@
     "cotton_mono"
    ],
    "water_p50": {
-    "cotton_mono": 12003,
-    "cotton_wheat": 7072,
-    "cotton_wheat_alfalfa": 9874,
-    "cotton_wheat_mung": 10574,
-    "wheat_chickpea_sorghum": 5397
+    "cotton_mono": 12002,
+    "cotton_wheat": 7059,
+    "cotton_wheat_alfalfa": 10852,
+    "cotton_wheat_mung": 10607,
+    "wheat_chickpea_sorghum": 5396
    }
   },
   "shift": {
@@ -112,43 +112,43 @@
  },
  "warming_0.03": {
   "crops": {
-   "alfalfa": 1042,
-   "barley": 605,
-   "chickpea": 416,
-   "cotton": 880,
-   "dry_bean": 608,
-   "groundnut": 706,
-   "lentil": 716,
-   "maize": 771,
-   "millet": 511,
-   "mung_bean": 414,
-   "onion": 823,
-   "potato": 735,
-   "rapeseed": 636,
-   "rice": 1003,
-   "sorghum": 615,
-   "soybean": 759,
-   "spring_wheat": 714,
-   "sugar_beet": 1049,
-   "sunflower": 602,
-   "tomato": 821,
-   "winter_wheat": 466
+   "alfalfa": 1082,
+   "barley": 628,
+   "chickpea": 426,
+   "cotton": 920,
+   "dry_bean": 627,
+   "groundnut": 729,
+   "lentil": 739,
+   "maize": 809,
+   "millet": 539,
+   "mung_bean": 426,
+   "onion": 852,
+   "potato": 763,
+   "rapeseed": 645,
+   "rice": 1037,
+   "sorghum": 649,
+   "soybean": 789,
+   "spring_wheat": 744,
+   "sugar_beet": 1081,
+   "sunflower": 637,
+   "tomato": 848,
+   "winter_wheat": 474
   },
   "rotations_drip": {
    "best_id": "wheat_chickpea_sorghum",
    "order": [
     "wheat_chickpea_sorghum",
     "cotton_wheat_mung",
-    "cotton_wheat_alfalfa",
     "cotton_wheat",
+    "cotton_wheat_alfalfa",
     "cotton_mono"
    ],
    "water_p50": {
-    "cotton_mono": 8038,
-    "cotton_wheat": 5399,
-    "cotton_wheat_alfalfa": 6962,
-    "cotton_wheat_mung": 7745,
-    "wheat_chickpea_sorghum": 4043
+    "cotton_mono": 8050,
+    "cotton_wheat": 5408,
+    "cotton_wheat_alfalfa": 7628,
+    "cotton_wheat_mung": 7740,
+    "wheat_chickpea_sorghum": 4054
    }
   },
   "rotations_furrow": {
@@ -156,16 +156,16 @@
    "order": [
     "wheat_chickpea_sorghum",
     "cotton_wheat_mung",
-    "cotton_wheat_alfalfa",
     "cotton_wheat",
+    "cotton_wheat_alfalfa",
     "cotton_mono"
    ],
    "water_p50": {
-    "cotton_mono": 12057,
-    "cotton_wheat": 8098,
-    "cotton_wheat_alfalfa": 10443,
-    "cotton_wheat_mung": 11618,
-    "wheat_chickpea_sorghum": 6065
+    "cotton_mono": 12075,
+    "cotton_wheat": 8112,
+    "cotton_wheat_alfalfa": 11441,
+    "cotton_wheat_mung": 11609,
+    "wheat_chickpea_sorghum": 6082
    }
   },
   "shift": {

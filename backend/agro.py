@@ -20,7 +20,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from .climate import BASELINE, RECENT, Days, _in, _mmdd
-from .physics import mean, percentile, rnd, saxton_rawls, spread
+from .physics import kc_climate_adjustment, mean, percentile, rnd, saxton_rawls, spread
 
 _DIR = Path(__file__).parent
 CONFIG = json.loads((_DIR / "crops.json").read_text(encoding="utf-8"))
@@ -91,12 +91,39 @@ def kc_at(day: int, stages: list, kc: list) -> float:
     return kc[1] + (kc[2] - kc[1]) * (day - ini - dev - mid) / stages[3]
 
 
+def adjusted_kc(d: Days, crop: dict, i0: int) -> list:
+    """Kc ini / mid / end of one season, mid and end corrected for that season's wind and dryness.
+
+    FAO-56 eq. 62 (mid, with the mean u2 and RHmin of the mid-season stage) and eq. 65 (end, only
+    when the tabulated Kc end is at least 0.45, with the late-stage means). Table values are kept
+    when the crop has no height or the record has no wind/humidity.
+    """
+    ini, mid, end = crop["kc"]
+    h = crop.get("height_m")
+    if not h or d.u2 is None or d.rh_min is None:
+        return [ini, mid, end]
+    s = crop["stages"]
+    m0 = i0 + s[0] + s[1]
+    l0 = m0 + s[2]
+    l1 = min(l0 + s[3], d.n)
+
+    def adj(a, b):
+        if b <= a:
+            return 0.0
+        return kc_climate_adjustment(sum(d.u2[a:b]) / (b - a), sum(d.rh_min[a:b]) / (b - a), h)
+
+    mid_adj = mid + adj(m0, min(l0, d.n))
+    end_adj = end + adj(l0, l1) if end >= 0.45 else end
+    return [ini, mid_adj, end_adj]
+
+
 def simulate(d: Days, crop: dict, harvest_year: int, awc: float) -> dict | None:
     """One season of one crop under the real weather of that year. None if data does not cover it."""
     sow = sow_date(crop, harvest_year, d.lat < 0)
     i0, length = d.idx(sow), sum(crop["stages"])
     if i0 - SPINUP_DAYS < 0 or i0 + length > d.n:
         return None
+    kc = adjusted_kc(d, crop, i0)
     taw = awc * crop["root_m"]
     raw = crop["p"] * taw
 
@@ -115,7 +142,7 @@ def simulate(d: Days, crop: dict, harvest_year: int, awc: float) -> dict | None:
         i = i0 + day
         t_sum += d.t[i]
         irrigation += percolation
-        etc = kc_at(day, crop["stages"], crop["kc"]) * d.et0[i]
+        etc = kc_at(day, crop["stages"], kc) * d.et0[i]
         need += etc
         rain += d.rain[i]
         depletion = max(0.0, depletion + etc - d.rain[i])
@@ -135,7 +162,8 @@ def simulate(d: Days, crop: dict, harvest_year: int, awc: float) -> dict | None:
     if frost or cold:
         stress = 1.0
     return {"need": need, "rain": rain, "irrigation": irrigation, "events": events,
-            "heat_days": heat_days, "frost": frost, "cold": cold, "t_season": t_season, "stress": stress}
+            "heat_days": heat_days, "frost": frost, "cold": cold, "t_season": t_season, "stress": stress,
+            "kc_mid": kc[1], "kc_end": kc[2]}
 
 
 def suitable_sowing_doy(d: Days, crop: dict, year: int) -> int | None:

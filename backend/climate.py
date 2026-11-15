@@ -41,6 +41,8 @@ class Days:
     gaps: int                # days filled from the previous day
     grid_elevation: float = 0.0     # mean elevation of the NASA grid cell
     correction_c: tuple = (0.0, 0.0, 0.0)   # added to (mean, max, min) temperature for the point's elevation
+    u2: list | None = None          # wind at 2 m, m/s (FAO-56 default 2 m/s where missing)
+    rh_min: list | None = None      # daily minimum relative humidity estimated from RHmean, %
 
     @property
     def daily(self) -> bool:
@@ -128,7 +130,7 @@ def prepare(data: dict, point_elevation: float | None = None) -> Days:
     lat = data["lat"]
     elev = point_elevation if d_max and point_elevation is not None else grid_elev
     ra_by_doy = [ph.extraterrestrial_radiation(lat, k) for k in range(0, 367)]
-    et0, pm_days = [], 0
+    et0, pm_days, u2, rh_min = [], 0, [], []
     for i in range(n):
         hi = tmax[i] if tmax[i] is not None else t[i] + 6
         lo = tmin[i] if tmin[i] is not None else t[i] - 6
@@ -139,6 +141,8 @@ def prepare(data: dict, point_elevation: float | None = None) -> Days:
         else:
             et0.append(ph.et0_hargreaves(t[i], hi, lo, ra))
         tmax[i], tmin[i] = hi, lo
+        u2.append(ws[i] if ws[i] is not None else 2.0)
+        rh_min.append(ph.rh_min_estimate(hi, lo, rh[i]) if rh[i] is not None else 45.0)
 
     spans = {}
     for y in range(start.year, year[-1] + 1 if n else start.year):
@@ -148,7 +152,7 @@ def prepare(data: dict, point_elevation: float | None = None) -> Days:
 
     days = Days(lat, data["lon"], elev, data.get("resolution", "daily"), start, n, t, tmax, tmin,
                 rain, et0, soil, year, doy, spans, pm_days / n if n else 0.0, gaps,
-                grid_elev, (d_mean, d_max, d_min))
+                grid_elev, (d_mean, d_max, d_min), u2, rh_min)
     with _prepared_lock:  # requests run in parallel threads
         if len(_prepared) > 24:
             _prepared.pop(next(iter(_prepared)), None)
@@ -204,7 +208,10 @@ def shift(annual: list[dict], field: str, digits: int) -> dict:
     recent = mean(a[field] for a in annual if _in(RECENT, a["year"]))
     delta = recent - base if base is not None and recent is not None else None
     fit = ph.ols(years, values)
-    p = ph.mann_kendall_p(values)
+    mk = ph.mann_kendall(values)
+    p = mk["p"] if mk else None
+    sen = ph.sen_slope(years, values)
+    r1 = ph.lag1_autocorrelation(values)
     out = {
         "baseline": rnd(base, digits),
         "recent": rnd(recent, digits),
@@ -213,6 +220,15 @@ def shift(annual: list[dict], field: str, digits: int) -> dict:
         "trend_per_decade": rnd(fit["slope"] * 10, max(digits, 2)) if fit else None,
         "trend_p_value": rnd(p, 3),
         "trend_significant": p is not None and p < 0.05,
+        # Robust slope and test details (added 2026-11; existing keys unchanged)
+        "trend_sen_per_decade": rnd(sen * 10, max(digits, 2)) if sen is not None else None,
+        "trend_test": {
+            "method": "Mann-Kendall, tie-corrected variance, continuity correction",
+            "s": mk["s"], "z": rnd(mk["z"], 3), "ties": mk["ties"], "n": mk["n"],
+            "lag1_autocorrelation": rnd(r1, 3),
+            # |r1| above 2/sqrt(n) inflates MK significance; the p-value is then optimistic
+            "serially_correlated": r1 is not None and abs(r1) > 2 / mk["n"] ** 0.5,
+        } if mk else None,
         "trend_line": None,
         "projection": None,
     }

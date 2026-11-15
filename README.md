@@ -61,8 +61,9 @@ docker run -p 8000:8000 --env-file .env terrashift
 | GET | `/api/analyze` | full field analysis: climate shift, crops, rotations, advice, provenance, warnings |
 | GET | `/api/water` | 16-day soil-water forecast with ensemble range |
 | GET | `/api/observations` | per-point NASA observations (SMAP, IMERG, GLDAS, MODIS, HLS, ECOSTRESS) |
+| GET | `/api/sensitivity` | which uncertain input moves a crop's irrigation need most (tornado) |
 
-Full schemas: `/docs`. Method and data flow: [ARCHITECTURE.md](ARCHITECTURE.md).
+Full schemas: `/docs`. Method and data flow: [ARCHITECTURE.md](ARCHITECTURE.md). Formula validation and change log: [SCIENCE.md](SCIENCE.md).
 
 ## Honest limits
 

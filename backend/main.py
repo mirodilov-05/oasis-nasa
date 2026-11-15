@@ -549,6 +549,69 @@ def water_forecast(
         raise HTTPException(502, "Weather forecast is temporarily unavailable.") from exc
 
 
+# ---------- sensitivity of the irrigation need ----------
+
+class SensitivityRange(BaseModel):
+    kind: str
+    size: float
+
+
+class SensitivityInput(BaseModel):
+    input: str
+    range: SensitivityRange
+    low_mm: float | None = None
+    high_mm: float | None = None
+    low_m3_ha: float | None = None
+    high_m3_ha: float | None = None
+    swing_mm: float | None = None
+    swing_pct: float | None = None
+    elasticity: float | None = None
+    affects: str | None = None
+
+
+class SensitivityResult(BaseModel):
+    crop: str
+    years: int
+    period: list[int]
+    base_mm: float
+    base_m3_ha: float
+    inputs: list[SensitivityInput]
+    method: str
+    limits: str
+    soil_awc_mm_per_m: float
+    data_source: str
+
+
+@app.get("/api/sensitivity", response_model=SensitivityResult)
+def sensitivity_endpoint(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    crop: str = Query(..., description="Crop id from /api/options"),
+    soil: str = Query("medium", pattern="^(light|medium|heavy)$"),
+    irrigation: str = Query("furrow", pattern="^(furrow|sprinkler|drip)$"),
+):
+    """Which uncertain input moves this crop's irrigation need most (tornado, recent 15 years).
+
+    ET0 +-10 %, rain +-20 %, soil AWC +-20 %, Kc mid +-0.10, irrigation efficiency +-0.10,
+    one at a time. Needs the NASA POWER daily record of the point (or a saved one).
+    """
+    from . import sensitivity
+
+    if crop not in agro.CROPS:
+        raise HTTPException(422, "unknown crop")
+    lat, lon = round(lat, 4), round(lon, 4)
+    data, source, _fb, _err = _load_series(lat, lon)
+    if not data or source == "monthly":
+        raise HTTPException(503, "Daily NASA POWER data for this point is not available right now.")
+    d = climate.prepare(data)
+    crop_def = agro.localize(d, agro.CROPS[crop])
+    awc = agro.CONFIG["soils"][soil]["awc_mm_per_m"]
+    result = sensitivity.irrigation_sensitivity(d, crop_def, awc, agro.CONFIG["irrigation"][irrigation]["efficiency"])
+    if result is None:
+        raise HTTPException(422, "The record does not cover a full season of this crop.")
+    return {**result, "soil_awc_mm_per_m": awc, "data_source": source}
+
+
 # ---------- NASA observations at the field ----------
 
 @app.get("/api/observations")

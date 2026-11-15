@@ -67,7 +67,8 @@ with `ADMIN_TOKEN` set: a map tile layer, or a JSON API that is returned as raw
 | `backend/data/countries.json` | Natural Earth 1:50m borders for offline "which country" (rebuild: `python -m backend.tools.build_countries ne_50m_admin_0_countries.geojson`) |
 | `backend/suitability.py` | "can crops grow here?": land cover (building, road, water, town...) + NASA POWER climate limits; `unsuitable` skips crop/rotation advice |
 | `backend/store.py` | memory and gzip file cache of NASA responses |
-| `backend/physics.py` | FAO-56 Penman-Monteith and Hargreaves ET0, statistics |
+| `backend/physics.py` | FAO-56 Penman-Monteith (split into its equations), Hargreaves ET0, Kc climatic adjustment (eq. 62/65); statistics: OLS + prediction interval, tie-corrected Mann-Kendall, Theil-Sen, lag-1 autocorrelation, t quantiles |
+| `backend/sensitivity.py` | `/api/sensitivity`: one-at-a-time tornado of the irrigation need (ET0, rain, AWC, Kc mid, efficiency) |
 | `backend/climate.py` | period comparison, trends, 2040 projection, frost season, last 30 days, outlook |
 | `backend/agro.py` | crop simulation, rotation replay, soil health index, ranking |
 | `backend/texts.py` | warnings and advice in English and Uzbek |
@@ -75,6 +76,7 @@ with `ADMIN_TOKEN` set: a map tile layer, or a JSON API that is returned as raw
 | `frontend/` | static pages: field setup (`index.html`), rotations, climate, crops, current conditions and sources; shared `style.css`, `app.js`, `i18n.js`, Leaflet, Chart.js and three.js in `vendor/` |
 | `frontend/intro.js`, `frontend/intro.css` | cinematic intro on `index.html` (see below) |
 | `tests/test_backend.py` | engine, providers and API tests, including FAO-56 examples 8 and 18 |
+| `tests/test_science.py` | reference validation: FAO-56 examples 2, 3, 8, 11, 17, 18, Annex 2 tables, Table 19, statistics by hand; see SCIENCE.md |
 | `tests/test_regression.py` + `regression_baseline.json` | locks the engine's outputs (climate shift, crop water need, rotation ranking) so a formula cannot change silently |
 | `tests/test_frontend.py` | static-site checks: intro wiring, assets served, links, i18n key parity |
 
