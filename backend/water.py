@@ -32,7 +32,7 @@ import threading
 import time
 from datetime import date, timedelta
 
-import httpx
+from . import net, quality
 
 from . import agro
 from .physics import percentile
@@ -52,7 +52,6 @@ KC_MAX = 1.20        # upper limit of evaporation + transpiration right after we
 MIN_MEMBERS = 10     # fewer ensemble members than this: fall back to fixed rain scenarios
 FALLBACK_RAIN = {"dry": 0.5, "expected": 1.0, "wet": 1.3}
 
-_client = httpx.Client(timeout=12, headers={"User-Agent": "field-shift-app"})
 _cache: dict[tuple, tuple[float, object]] = {}
 _lock = threading.Lock()
 
@@ -86,10 +85,10 @@ def fetch(lat: float, lon: float, past_days: int) -> dict:
             "hourly": "soil_temperature_0cm,soil_temperature_6cm",
         }
         try:
-            r = _client.get(OPEN_METEO, params=params)
-            r.raise_for_status()
-            body = r.json()
+            body = net.get("open_meteo", OPEN_METEO, params).json()
             daily, hourly = body["daily"], body["hourly"]
+            for name in quality.check_open_meteo_units(body.get("daily_units")):
+                daily[name] = [None] * len(daily["time"])
             ground: dict[str, float] = {}
             seed: dict[str, list] = {}
             for stamp, value, v6 in zip(hourly["time"], hourly["soil_temperature_0cm"],
@@ -112,8 +111,10 @@ def fetch(lat: float, lon: float, past_days: int) -> dict:
                     # mean temperature at seed depth (6 cm): what decides germination
                     "soil6_mean": round(sum(seed[t]) / len(seed[t]), 1) if seed.get(t) else None,
                 })
-        except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError) as exc:
-            raise WeatherDown(f"Open-Meteo: {type(exc).__name__}") from exc
+        except net.Unavailable as exc:
+            raise WeatherDown(f"Open-Meteo: {exc.reason}") from exc
+        except (KeyError, TypeError, IndexError) as exc:
+            raise WeatherDown(f"Open-Meteo: unexpected response ({type(exc).__name__})") from exc
         if not days:
             raise WeatherDown("Open-Meteo: no days")
         _era5_past(lat, lon, days)
@@ -131,12 +132,11 @@ def _era5_past(lat: float, lon: float, days: list) -> None:
     if not past:
         return
     try:
-        r = _client.get(ERA5, params={"latitude": lat, "longitude": lon, "start_date": past[0]["date"], "end_date": past[-1]["date"],
-                                      "daily": "precipitation_sum,et0_fao_evapotranspiration,shortwave_radiation_sum,"
-                                               "temperature_2m_max,temperature_2m_min", "timezone": "auto"})
-        r.raise_for_status()
-        daily = r.json()["daily"]
-    except (httpx.HTTPError, ValueError, KeyError):
+        daily = net.get("open_meteo", ERA5, {
+            "latitude": lat, "longitude": lon, "start_date": past[0]["date"], "end_date": past[-1]["date"],
+            "daily": "precipitation_sum,et0_fao_evapotranspiration,shortwave_radiation_sum,"
+                     "temperature_2m_max,temperature_2m_min", "timezone": "auto"}).json()["daily"]
+    except (net.Unavailable, KeyError, TypeError):
         return                                   # keep the forecast model's values
     by_date = {t: i for i, t in enumerate(daily["time"])}
     for d in past:
@@ -154,9 +154,7 @@ def fetch_ensemble(lat: float, lon: float) -> list[dict]:
         params = {"latitude": lat, "longitude": lon, "timezone": "auto", "forecast_days": FORECAST_DAYS,
                   "daily": "precipitation_sum,et0_fao_evapotranspiration", "models": ENSEMBLE_MODELS}
         try:
-            r = _client.get(ENSEMBLE, params=params)
-            r.raise_for_status()
-            daily = r.json()["daily"]
+            daily = net.get("open_meteo_ensemble", ENSEMBLE, params).json()["daily"]
             times = daily["time"]
             members = []
             for key, rain in daily.items():
@@ -168,7 +166,7 @@ def fetch_ensemble(lat: float, lon: float) -> list[dict]:
                 members.append({t: (rain[i], et0[i]) for i, t in enumerate(times)
                                 if rain[i] is not None and et0[i] is not None})
             return [m for m in members if len(m) >= 7]
-        except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError):
+        except (net.Unavailable, KeyError, TypeError, IndexError):
             return []
     return _cached(("ens", round(lat, 2), round(lon, 2)), load)
 

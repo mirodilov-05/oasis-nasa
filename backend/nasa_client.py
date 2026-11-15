@@ -11,15 +11,13 @@ Both return the same structure, so the analysis code has a single input format:
 from __future__ import annotations
 
 import calendar
-import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 
-import httpx
+from . import net, quality
 
 BASE = "https://power.larc.nasa.gov/api/temporal"
 START = date(1991, 1, 1)
-TIMEOUT_S = float(os.getenv("POWER_TIMEOUT", "8"))
 
 # T2M, T2M_MAX, T2M_MIN  air temperature at 2 m: daily mean, maximum, minimum (C)
 # PRECTOTCORR            precipitation (mm/day)
@@ -29,8 +27,6 @@ TIMEOUT_S = float(os.getenv("POWER_TIMEOUT", "8"))
 # GWETROOT               root zone soil wetness, fraction 0..1 (model, not a satellite measurement)
 PARAMS = ["T2M", "T2M_MAX", "T2M_MIN", "PRECTOTCORR", "RH2M", "WS2M", "ALLSKY_SFC_SW_DWN", "GWETROOT"]
 _MONTHLY = ["T2M", "T2M_RANGE", "PRECTOTCORR", "RH2M", "WS2M", "ALLSKY_SFC_SW_DWN", "GWETROOT"]
-
-_client = httpx.Client(timeout=TIMEOUT_S, headers={"User-Agent": "field-shift-app"})
 
 
 class PowerError(Exception):
@@ -42,16 +38,15 @@ def _get(kind: str, lat: float, lon: float, params: list[str], start: str, end: 
              "longitude": lon, "start": start, "end": end, "format": "JSON"}
     url = f"{BASE}/{kind}/point"
     try:
-        try:
-            resp = _client.get(url, params=query)
-        except httpx.ConnectError:
-            resp = _client.get(url, params=query)  # one retry for a network blip
-        resp.raise_for_status()
+        resp = net.get("nasa_power", url, query)      # timeouts, retries, dedup and cache: backend/net.py
         body = resp.json()
         body["properties"]["parameter"]  # must exist
+        body["_fetched_at"] = resp.fetched_at
         return body
-    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
-        raise PowerError(f"{type(exc).__name__}: {exc}") from exc
+    except net.Unavailable as exc:
+        raise PowerError(exc.reason) from exc
+    except (KeyError, TypeError) as exc:
+        raise PowerError(f"unexpected response ({type(exc).__name__})") from exc
 
 
 def _meta(body: dict, lat: float, lon: float, resolution: str) -> dict:
@@ -63,7 +58,7 @@ def _meta(body: dict, lat: float, lon: float, resolution: str) -> dict:
         "elevation": coords[2] if len(coords) > 2 and coords[2] is not None else 0.0,
         "resolution": resolution,
         "start": START.isoformat(),
-        "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "fetched_at": body.get("_fetched_at") or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "api_version": header.get("api", {}).get("version"),
         "sources": header.get("sources", []),
     }
@@ -95,10 +90,13 @@ def fetch_daily(lat: float, lon: float, today: date | None = None) -> dict:
                 idx = (date(int(key[:4]), int(key[4:6]), int(key[6:8])) - START).days
                 if 0 <= idx < total:
                     series[idx] = value
+    units = {k: (v or {}).get("units") for k, v in (bodies[0].get("parameters") or {}).items()}
+    report = quality.check_power(params, START.isoformat(), units)   # out-of-range -> None, counted
     if not any(v is not None for v in params["T2M"]):
         raise PowerError("no temperature data for this point")
     sources = sorted({s for b in bodies for s in b.get("header", {}).get("sources", [])})
-    return {**_meta(bodies[-1], lat, lon, "daily"), "sources": sources, "params": params}
+    return {**_meta(bodies[-1], lat, lon, "daily"), "sources": sources, "params": params,
+            "units": units, "quality": report}
 
 
 def fetch_monthly(lat: float, lon: float, today: date | None = None) -> dict:
@@ -130,6 +128,7 @@ def fetch_monthly(lat: float, lon: float, today: date | None = None) -> dict:
             }
             for name in PARAMS:
                 params[name].extend([row[name]] * days)
+    report = quality.check_power(params, START.isoformat())
     if not any(v is not None for v in params["T2M"]):
         raise PowerError("no temperature data for this point")
-    return {**_meta(body, lat, lon, "monthly"), "params": params}
+    return {**_meta(body, lat, lon, "monthly"), "params": params, "quality": report}

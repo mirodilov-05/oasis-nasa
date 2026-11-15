@@ -23,8 +23,10 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (agro, climate, geo, landcover, nasa_client, observe, providers, regional, store, suitability, terrain,
-               texts, usa, water, weekly)
+from .quality import check_power
+
+from . import (agro, climate, earthdata, geo, landcover, nasa_client, net, observe, providers, regional,
+               sources, store, suitability, terrain, texts, usa, water, weekly)
 
 
 def _load_env(path: Path) -> None:
@@ -378,6 +380,8 @@ def analyze(
               "region": None, "week_plan": None}
     suit = suitability.judge(cover, None, False, sat, relief)
     if data:
+        if "quality" not in data:   # stored records from before 2026-11: validate once, in place
+            data["quality"] = check_power(data["params"], data["start"], data.get("units"))
         # NASA POWER temperatures are for the mean height of a ~50 km cell: move them to the field's height
         days = climate.prepare(data, point_elevation)
         if days.correction_c[1]:
@@ -478,6 +482,30 @@ def analyze(
     if forecast:
         datasets.append({"name": "Open-Meteo", "detail": "weather forecast", "sources": [],
                          "url": "https://open-meteo.com/", "nasa": False})
+    # provenance: one record per source, with how it was obtained and how complete it was
+    soil_status = ("chosen" if soil != "auto" else "replaced" if us and us.get("soil") else
+                   "live" if soil_info else "disabled" if soil_p and not on(soil_p) else "default")
+    gibs_ok = any(l["provider"] == "nasa_gibs" for l in map_layers)
+    provenance = [
+        sources.power_record(data, source, fallback, error),
+        sources.simple_record("soilgrids", soil_status, ["soil water capacity", "rotations"],
+                              fetched_at=(soil_info or {}).get("fetched_at"), error=soil_error,
+                              detail=None if soil_status != "default" else f"class '{soil_class}' used"),
+        sources.simple_record("open_meteo", "live" if forecast else "unavailable" if fc_p and on(fc_p) else "disabled",
+                              ["this week's water need"], fetched_at=(forecast or {}).get("fetched_at"),
+                              error=fc_error, quality=(forecast or {}).get("quality"),
+                              detail=None if forecast else "NASA POWER climatology of the same dates is used"),
+        sources.simple_record("nasa_gibs", "live" if gibs_ok else "unavailable", ["map layers"]),
+        sources.simple_record("nasa_srtm", "live" if relief is not None else "unavailable",
+                              ["field elevation", "slope", "temperature height correction"],
+                              detail=None if relief is not None else "elevation from Copernicus DEM (Open-Meteo) when available"),
+        sources.simple_record("nasa_earthdata", "not_used", ["/api/observations"],
+                              detail="token configured" if earthdata.token() else "EARTHDATA_TOKEN not set"),
+        sources.offline_record("faostat", bool(region_info.get("country")), ["crop mix", "yield", "price"],
+                               (region_info.get("country") or {}).get("name")),
+        sources.offline_record("mapspam", bool(region_info.get("local")), ["local crop mix"],
+                               (region_info.get("local") or {}).get("region")),
+    ]
     return {
         "location": {"lat": lat, "lon": lon},
         "source": source,
@@ -493,6 +521,7 @@ def analyze(
         "providers": statuses,
         "warnings": warnings,
         "datasets": datasets,
+        "provenance": provenance,
         "map_layers": map_layers,
         "soil": {"class": soil_class, "name": agro.CONFIG["soils"][soil_class]["name"],
                  "awc_mm_per_m": soil_water["awc_mm_per_m"], "water": soil_water, "details": soil_info},
@@ -547,6 +576,42 @@ def water_forecast(
                           sow, last_irrigation, today, obs)
     except water.WeatherDown as exc:
         raise HTTPException(502, "Weather forecast is temporarily unavailable.") from exc
+
+
+# ---------- data sources: catalogue and live health ----------
+
+class DataSource(BaseModel):
+    id: str
+    name: str
+    nasa: bool
+    access: str                       # "api" or "offline"
+    provides: str
+    resolution: str
+    latency: str
+    url: str
+    license: str
+    state: str                        # ok | degraded | down | unknown | not_configured | offline_dataset | missing
+    needs_key: str | None = None
+    key_configured: bool | None = None
+    channels: dict | None = None      # per HTTP channel: state, stats, policy (timeouts, retries, cache)
+    dataset: dict | None = None       # bundled file: path, bytes, sha256, modified
+
+
+class DataSourcesResult(BaseModel):
+    generated_at: str
+    sources: list[DataSource]
+
+
+@app.get("/api/data-sources", response_model=DataSourcesResult)
+def data_sources():
+    """Every data source: what it provides, its resolution and licence, and its live state.
+
+    API sources report the health this server has seen (calls, failures, retries, cache and
+    deduplication hits, last success and error, circuit-breaker state) and the request policy
+    (timeouts, retries, cache lifetime). Bundled datasets report their file fingerprint.
+    No external call is made by this endpoint.
+    """
+    return {"generated_at": net._now_iso(), "sources": sources.catalogue()}
 
 
 # ---------- sensitivity of the irrigation need ----------

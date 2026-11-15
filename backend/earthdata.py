@@ -17,6 +17,8 @@ from datetime import date, datetime
 
 import httpx
 
+from . import net
+
 CMR = "https://cmr.earthdata.nasa.gov/search/granules.umm_json"
 TIMEOUT_S = 90
 
@@ -52,11 +54,9 @@ def granules(short_name: str, start: date, end: date, lat: float | None = None, 
     if version:
         params["version"] = version
     try:
-        r = httpx.get(CMR, params=params, timeout=30)
-        r.raise_for_status()
-        items = r.json().get("items", [])
-    except (httpx.HTTPError, ValueError) as exc:
-        raise EarthdataDown(f"CMR: {type(exc).__name__}") from exc
+        items = net.get("earthdata_cmr", CMR, params).json().get("items", [])
+    except net.Unavailable as exc:
+        raise EarthdataDown(f"CMR: {exc.reason}") from exc
     out = []
     for it in items:
         u = it["umm"]
@@ -75,15 +75,14 @@ def granules(short_name: str, start: date, end: date, lat: float | None = None, 
 def dap(url: str, constraint: str) -> dict:
     """{variable path: numpy array} for a DAP4 constraint such as "/sm_rootzone[273][2578]"."""
     import h5py
-    with _client() as c:
-        for attempt in (1, 2):
-            try:
-                r = c.get(url + ".dap.nc4", params={"dap4.ce": constraint})
-                r.raise_for_status()
-                break
-            except httpx.HTTPError as exc:
-                if attempt == 2:
-                    raise EarthdataDown(f"OPeNDAP: {type(exc).__name__}") from exc
+    tok = token()
+    if not tok:
+        raise EarthdataDown("EARTHDATA_TOKEN is not set")
+    try:
+        r = net.get("earthdata_data", url + ".dap.nc4", {"dap4.ce": constraint},
+                    headers={"Authorization": f"Bearer {tok}"}, follow_redirects=True, cache=False)
+    except net.Unavailable as exc:
+        raise EarthdataDown(f"OPeNDAP: {exc.reason}") from exc
     out = {}
     with h5py.File(io.BytesIO(r.content), "r") as f:
         f.visititems(lambda n, o: out.__setitem__(n, o[...]) if isinstance(o, h5py.Dataset) else None)

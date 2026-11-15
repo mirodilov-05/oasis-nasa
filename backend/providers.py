@@ -25,12 +25,11 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from pathlib import Path
 from urllib.parse import urlparse
 
-import httpx
+from . import net, quality
 
 CONFIG = Path(__file__).parent / "providers.json"
 HEALTH_TTL_S = 120
 DOWN_TTL_S = 600
-TIMEOUT_S = 3.5
 JSON_MAX_BYTES = 2_000_000
 
 _GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best"
@@ -95,7 +94,6 @@ BUILTIN = [
 _BUILTIN_IDS = {p["id"] for p in BUILTIN}
 
 _lock = threading.Lock()
-_client = httpx.Client(timeout=TIMEOUT_S, headers={"User-Agent": "field-shift-app"})
 _health: dict[str, tuple[float, dict]] = {}
 _down_until: dict[str, tuple[float, str]] = {}
 
@@ -215,6 +213,13 @@ def layers_of(provider: dict) -> list[dict]:
     }]
 
 
+NET_POLICY = {"soilgrids": "soilgrids", "open_meteo": "open_meteo"}
+
+
+def _net_name(provider: dict) -> str:
+    return NET_POLICY.get(provider["id"], "custom")
+
+
 def _fetch(provider: dict, lat: float, lon: float):
     """GET the provider's JSON for a point, remembering failures for 10 minutes."""
     down = _down_until.get(provider["id"])
@@ -222,14 +227,13 @@ def _fetch(provider: dict, lat: float, lon: float):
         raise ProviderDown(f"{down[1]} (skipped, retry in {int(down[0] - time.time())} s)")
     url = provider["url_template"].replace("{lat}", str(lat)).replace("{lon}", str(lon))
     try:
-        # SoilGrids often needs about 10 s; it is fetched in the background (see soil()), so it may take longer
-        resp = _client.get(url, timeout=SOIL_TIMEOUT_S if provider.get("kind") == "soil" else TIMEOUT_S)
-        resp.raise_for_status()
+        # per-provider timeouts and retries: backend/net.py (SoilGrids may take ~25 s, it runs in the background)
+        resp = net.get(_net_name(provider), url)
         if len(resp.content) > JSON_MAX_BYTES:
-            raise ValueError("response too large")
+            raise net.Unavailable(provider["id"], "response too large")
         body = resp.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        reason = type(exc).__name__
+    except net.Unavailable as exc:
+        reason = exc.reason
         # soil is fetched in the background and costs the request nothing, so it may be retried sooner
         ttl = SOIL_DOWN_TTL_S if provider.get("kind") == "soil" else DOWN_TTL_S
         _down_until[provider["id"]] = (time.time() + ttl, reason)
@@ -254,29 +258,25 @@ def check(provider: dict, force: bool = False) -> dict:
     try:
         if provider["kind"] == "layers":
             url = layers_of(provider)[0]["url"].replace("{z}", "2").replace("{y}", "1").replace("{x}", "1")
-            resp = _client.get(url)
-            if resp.status_code != 200:
-                raise ProviderDown(f"HTTP {resp.status_code}")
+            net.get("nasa_gibs" if provider["id"] == "nasa_gibs" else "custom", url, cache=False)
         elif provider["kind"] == "series":
             from . import nasa_client
-            resp = nasa_client._client.get(
-                f"{nasa_client.BASE}/daily/point",
-                params={"parameters": "T2M", "community": "AG", "latitude": 41.3, "longitude": 69.2,
-                        "start": "20240101", "end": "20240102", "format": "JSON"})
-            if resp.status_code != 200:
-                raise ProviderDown(f"HTTP {resp.status_code}")
+            net.get("nasa_power", f"{nasa_client.BASE}/daily/point",
+                    {"parameters": "T2M", "community": "AG", "latitude": 41.3, "longitude": 69.2,
+                     "start": "20240101", "end": "20240102", "format": "JSON"}, cache=False)
         else:
             _fetch(provider, 41.3, 69.2)
         result = {"status": "ok", "ms": round((time.perf_counter() - started) * 1000), "message": None}
-    except (httpx.HTTPError, ProviderDown) as exc:
-        result = {"status": "down", "ms": None, "message": str(exc) or type(exc).__name__}
+    except net.Unavailable as exc:
+        result = {"status": "down", "ms": None, "message": exc.reason}
+    except ProviderDown as exc:
+        result = {"status": "down", "ms": None, "message": str(exc)}
     _health[provider["id"]] = (now, result)
     return result
 
 
 # ---------- soil ----------
 
-SOIL_TIMEOUT_S = 25
 SOIL_DOWN_TTL_S = 120
 SOIL_WAIT_S = 3.5          # a request waits this long; the fetch itself goes on in the background
 SOIL_CACHE_FILE = Path(__file__).parent / "cache" / "soil.json"
@@ -332,6 +332,7 @@ def soil(provider: dict, lat: float, lon: float) -> dict:
 def _soil_fetch(provider: dict, lat: float, lon: float, key: tuple) -> dict:
     try:
         result = _soil_parse(_fetch(provider, lat, lon))
+        result["fetched_at"] = net._now_iso()
         with _lock:
             _soil_cache[key] = result
             _soil_to_disk()
@@ -364,6 +365,9 @@ def _soil_parse(body) -> dict:
         "ph": round(values["phh2o"], 1) if "phh2o" in values else None,
         "depth_cm": "0-30", "source": "SoilGrids 2.0 (ISRIC), 250 m",
     }
+    problems = quality.check_soil(result)
+    if problems:   # never pass implausible numbers into the water balance
+        raise ProviderDown("implausible soil data: " + "; ".join(problems))
     return result
 
 
@@ -373,7 +377,7 @@ def forecast(provider: dict, lat: float, lon: float) -> dict:
     """Daily forecast normalised to a small structure."""
     body = _fetch(provider, lat, lon)
     try:
-        return _forecast_days(provider, body)
+        return {**_forecast_days(provider, body), "fetched_at": net._now_iso()}
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise ProviderDown(f"unexpected response ({type(exc).__name__})") from exc
 
@@ -383,6 +387,9 @@ def _forecast_days(provider: dict, body) -> dict:
     times = daily.get("time") or []
     if not times:
         raise ProviderDown("empty forecast")
+    wrong = quality.check_open_meteo_units(body.get("daily_units"))
+    for name in wrong:                      # a unit we do not compute with: drop it, do not convert on a guess
+        daily[name] = [None] * len(times)
 
     def col(name):
         values = daily.get(name) or []
@@ -392,6 +399,7 @@ def _forecast_days(provider: dict, body) -> dict:
     tmax, tmin, prob = col("temperature_2m_max"), col("temperature_2m_min"), col("precipitation_probability_max")
     days = [{"date": times[i], "rain_mm": rain[i], "et0_mm": et0[i], "t_max": tmax[i], "t_min": tmin[i],
              "rain_probability": prob[i]} for i in range(len(times)) if rain[i] is not None or tmax[i] is not None]
+    rejected = quality.clean_forecast_days(days)
     week = days[:7]
     next_rain = next((d for d in days if (d["rain_mm"] or 0) >= 1.0), None)
     return {
@@ -402,4 +410,5 @@ def _forecast_days(provider: dict, body) -> dict:
         "next_rain_date": next_rain["date"] if next_rain else None,
         "next_rain_mm": next_rain["rain_mm"] if next_rain else None,
         "horizon_days": len(days),
+        "quality": {"rejected_values": rejected, "rejected_units": wrong},
     }

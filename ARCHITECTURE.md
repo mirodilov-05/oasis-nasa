@@ -46,6 +46,45 @@ More sources can be added in the site (Data sources button) when the server runs
 with `ADMIN_TOKEN` set: a map tile layer, or a JSON API that is returned as raw
 `extra` data.
 
+## Data provider infrastructure (2026-11)
+
+Every external call goes through `backend/net.py` with the policy of its provider:
+
+| Channel | Connect / read timeout | Retries | Time budget | Cache | Breaker |
+|---|---|---|---|---|---|
+| `nasa_power` | 4 s / 8 s | 1 | 20 s | 6 h | 3 failures → 120 s |
+| `nasa_gibs` (health probe) | 3 s / 3.5 s | 0 | 5 s | none | 3 → 300 s |
+| `earthdata_cmr` | 5 s / 30 s | 2 | 60 s | 1 h | 3 → 120 s |
+| `earthdata_data` (OPeNDAP, LP DAAC) | 10 s / 90 s | 1 (also on read timeout) | 180 s | none | 5 → 120 s |
+| `srtm` (OpenTopoData, 1 call/s) | 4 s / 8 s | 1 | 15 s | 30 days (+ disk) | 3 → 120 s |
+| `soilgrids` (background) | 5 s / 25 s | 1 | 60 s | 30 days (+ disk) | 3 → 120 s |
+| `open_meteo` (forecast, ERA5) | 3 s / 12 s | 2 | 25 s | 15 min | 3 → 120 s |
+| `open_meteo_ensemble` | 3 s / 20 s | 1 | 30 s | 30 min | 3 → 120 s |
+| `custom` (user-added) | 3 s / 3.5 s | 0 | 5 s | none | 3 → 600 s |
+
+- **Retried:** connection errors, HTTP 429 and 5xx (with exponential backoff ±25 % jitter,
+  `Retry-After` honoured). **Not retried:** other 4xx, and read timeouts except for Earthdata data
+  (a slow server rarely gets faster). No retry starts once the time budget would be exceeded.
+- **Deduplication:** identical requests in flight at the same time share one upstream call.
+- **Units and ranges** (`quality.py`): POWER and Open-Meteo declare units in their responses; a
+  parameter in an unexpected unit is dropped, never converted on a guess. Values outside the
+  physical range (e.g. RH > 100 %, negative rain, elevation > 9000 m) become missing and are
+  counted. Implausible SoilGrids texture is refused and the soil falls back to the class default.
+- **Missing data:** per parameter: present, missing inside the record, rejected, and "pending"
+  recent days not yet published by POWER, plus the first and last day with data.
+- **Provenance:** `/api/analyze` returns `provenance`, one record per source with its status
+  (`live`, `cache`, `fallback` with distance, `approximate`, `default`, `chosen`, `replaced`,
+  `unavailable`, `disabled`, `offline_dataset`, `not_used`), source timestamp, age, period,
+  completeness, rejected values and the error text. FAOSTAT and MapSPAM are bundled files and
+  are identified by SHA-256 fingerprint.
+- **`GET /api/data-sources`:** catalogue (resolution, latency, licence) and the live health this
+  server has seen per channel (calls, failures, retries, cache/dedup hits, last success and
+  error, breaker state, policy). It makes no external call.
+
+Not routed through `net.py` yet: OpenStreetMap Nominatim/Photon (`geo.py`), the Esri land-cover
+service (`landcover.py`), USDA services (`usa.py`) and the GDAL reads of `earthdata.cog_point`;
+they keep their own timeouts and caches.
+
 ## Code map
 
 | File | Role |
@@ -67,6 +106,9 @@ with `ADMIN_TOKEN` set: a map tile layer, or a JSON API that is returned as raw
 | `backend/data/countries.json` | Natural Earth 1:50m borders for offline "which country" (rebuild: `python -m backend.tools.build_countries ne_50m_admin_0_countries.geojson`) |
 | `backend/suitability.py` | "can crops grow here?": land cover (building, road, water, town...) + NASA POWER climate limits; `unsuitable` skips crop/rotation advice |
 | `backend/store.py` | memory and gzip file cache of NASA responses |
+| `backend/net.py` | shared HTTP layer: per-provider timeouts, retries with backoff, request deduplication, response cache with expiry, circuit breaker, health statistics |
+| `backend/quality.py` | unit checks, physical-range limits and missing-data accounting (POWER, SoilGrids, Open-Meteo, SRTM) |
+| `backend/sources.py` | catalogue of the eight sources and the `provenance` record of each analysis; `/api/data-sources` |
 | `backend/physics.py` | FAO-56 Penman-Monteith (split into its equations), Hargreaves ET0, Kc climatic adjustment (eq. 62/65); statistics: OLS + prediction interval, tie-corrected Mann-Kendall, Theil-Sen, lag-1 autocorrelation, t quantiles |
 | `backend/sensitivity.py` | `/api/sensitivity`: one-at-a-time tornado of the irrigation need (ET0, rain, AWC, Kc mid, efficiency) |
 | `backend/climate.py` | period comparison, trends, 2040 projection, frost season, last 30 days, outlook |

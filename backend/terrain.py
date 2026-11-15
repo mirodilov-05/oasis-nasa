@@ -21,7 +21,7 @@ import threading
 import time
 from pathlib import Path
 
-import httpx
+from . import net
 
 URL = "https://api.opentopodata.org/v1/srtm30m"
 STEP_M = 60.0
@@ -29,7 +29,6 @@ MIN_INTERVAL_S = 1.1
 CACHE_FILE = Path(__file__).parent / "cache" / "terrain.json"
 CLASSES = ((2, "flat"), (6, "gentle"), (12, "moderate"), (20, "strong"), (1e9, "steep"))
 
-_client = httpx.Client(timeout=8, headers={"User-Agent": "field-shift-app"})
 _cache: dict[str, dict] | None = None
 _lock = threading.Lock()
 _rate_lock = threading.Lock()
@@ -81,11 +80,14 @@ def sample(lat: float, lon: float) -> dict:
             time.sleep(wait)
         _last_call = time.monotonic()
     try:
-        r = _client.get(URL, params={"locations": "|".join(f"{y:.6f},{x:.6f}" for y, x in pts)})
-        r.raise_for_status()
+        r = net.get("srtm", URL, {"locations": "|".join(f"{y:.6f},{x:.6f}" for y, x in pts)})
         z = [p["elevation"] for p in r.json()["results"]]
-    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
-        raise TerrainDown(f"SRTM: {type(exc).__name__}") from exc
+    except net.Unavailable as exc:
+        raise TerrainDown(f"SRTM: {exc.reason}") from exc
+    except (KeyError, TypeError) as exc:
+        raise TerrainDown(f"SRTM: unexpected response ({type(exc).__name__})") from exc
+    if any(v is not None and not -500 <= v <= 9000 for v in z):    # metres; outside: not a terrain height
+        raise TerrainDown("SRTM: implausible elevation")
     if any(v is None for v in z):           # sea or a data hole
         result = {"elevation_m": z[4], "slope_pct": None, "slope_deg": None, "aspect_deg": None,
                   "class": None, "relief_m": None, "source": "NASA SRTM 30 m"}
